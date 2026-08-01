@@ -1649,8 +1649,33 @@ onSongChange(() => {
   }
 });
 
+// ── Remote Play Polling ──
+// Every 5s, check if someone pushed a song via remote play
+let _remoteInterval = null;
+function startRemotePoll() {
+  if (_remoteInterval) return;
+  _remoteInterval = setInterval(async () => {
+    try {
+      const d = await api('/music/remote');
+      if (d.ok && d.song) {
+        const song = d.song;
+        showToast('♪ ' + (song.name || 'New song'));
+        playSong({
+          name: song.name || '',
+          artist: song.artist || '',
+          cover: song.cover || '',
+          songId: song.songId || song.id,
+          album: song.album || '',
+        });
+      }
+    } catch {}
+  }, 5000);
+}
+
 // ── Init ──
 init();
+// Start remote polling after auth
+if (auth()) startRemotePoll();
 </script>
 </body>
 </html>
