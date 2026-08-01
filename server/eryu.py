@@ -64,6 +64,10 @@ logger = logging.getLogger("eryu")
 # ── Secret management ────────────────────────────────────────────────────────
 
 def _load_or_create_secret() -> str:
+    # Allow secret from environment (for PaaS like Zeabur)
+    env_secret = os.environ.get("ERYU_SECRET", "").strip()
+    if env_secret:
+        return env_secret
     secret_file = HERE / ".secret"
     try:
         if secret_file.exists():
