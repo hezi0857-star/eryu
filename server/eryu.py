@@ -191,6 +191,11 @@ class EryuHandler(BaseHTTPRequestHandler):
     # ── Netease helpers ──
 
     def _netease_cookie(self) -> str:
+        # Try environment variable first (for PaaS like Zeabur)
+        env_cookie = os.environ.get("NETEASE_MUSIC_U", "")
+        if env_cookie:
+            return f"MUSIC_U={env_cookie}"
+        # Fall back to file
         cred = HERE / ".netease_cred"
         try:
             for line in cred.read_text().splitlines():
