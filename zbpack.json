@@ -1,0 +1,4 @@
+{
+  "build_command": "",
+  "start_command": "python3 server/eryu.py"
+}
