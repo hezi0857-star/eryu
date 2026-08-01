@@ -212,6 +212,7 @@ class EryuHandler(BaseHTTPRequestHandler):
         headers = {
             "Cookie": self._netease_cookie(),
             "Referer": "https://music.163.com",
+            "X-Real-IP": "116.25.146.177",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         }
         if extra_headers:
