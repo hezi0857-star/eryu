@@ -400,12 +400,370 @@ class EryuHandler(BaseHTTPRequestHandler):
         else:
             self._send_json(404, {"error": "not found"})
 
+    # ── MCP auth (Bearer token) ──
+
+    def _check_mcp_auth(self) -> bool:
+        """Check Authorization: Bearer <secret> header for MCP endpoint."""
+        if not self.state.shared_secret:
+            return True
+        auth = self.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            return auth[7:].strip() == self.state.shared_secret
+        return False
+
+    # ── MCP endpoint ──────────────────────────────────────────────────────────
+
+    def _handle_mcp(self):
+        """Handle MCP JSON-RPC requests (initialize, tools/list, tools/call)."""
+        if not self._check_mcp_auth():
+            self._send_json(403, {"error": "auth required"})
+            return
+
+        body = self._read_body()
+        method = body.get("method", "")
+        req_id = body.get("id")
+
+        if method == "initialize":
+            self._mcp_respond(req_id, {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "eryu", "version": "1.0.0"},
+            })
+        elif method == "notifications/initialized":
+            # Client acknowledgment, no response needed but send empty ok
+            self._mcp_respond(req_id, {})
+        elif method == "tools/list":
+            self._mcp_respond(req_id, {"tools": self._mcp_tools()})
+        elif method == "tools/call":
+            params = body.get("params", {})
+            tool_name = params.get("name", "")
+            arguments = params.get("arguments", {})
+            result = self._mcp_call_tool(tool_name, arguments)
+            self._mcp_respond(req_id, result)
+        else:
+            self._mcp_error(req_id, -32601, f"Method not found: {method}")
+
+    def _mcp_respond(self, req_id, result):
+        resp = {"jsonrpc": "2.0", "id": req_id, "result": result}
+        data = json.dumps(resp, ensure_ascii=False).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _mcp_error(self, req_id, code, message):
+        resp = {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
+        data = json.dumps(resp, ensure_ascii=False).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _mcp_tools(self) -> list:
+        return [
+            {
+                "name": "eryu_search",
+                "description": "搜索网易云音乐歌曲。返回歌名、歌手、专辑、封面。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "搜索关键词（歌名、歌手、歌词片段）"}
+                    },
+                    "required": ["query"],
+                },
+            },
+            {
+                "name": "eryu_remote_play",
+                "description": "推送一首歌到 Una 的 eryu 播放器，她会立刻听到。用于「给你放首歌」「一起听这首」的场景。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "songId": {"type": "integer", "description": "网易云歌曲 ID"},
+                        "name": {"type": "string", "description": "歌曲名"},
+                        "artist": {"type": "string", "description": "歌手名"},
+                        "cover": {"type": "string", "description": "封面 URL（可选）"},
+                    },
+                    "required": ["songId", "name", "artist"],
+                },
+            },
+            {
+                "name": "eryu_listen_together",
+                "description": "记录一次「一起听」事件。推歌给 Una 时同时调用，累计我们一起听过这首歌的次数。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "songId": {"type": "integer", "description": "网易云歌曲 ID"},
+                        "name": {"type": "string", "description": "歌曲名"},
+                        "artist": {"type": "string", "description": "歌手名"},
+                    },
+                    "required": ["songId", "name", "artist"],
+                },
+            },
+            {
+                "name": "eryu_roam",
+                "description": "漫游模式：随机发现一首新歌（跨风格、跨语种）。适合「来点新歌」「随便听听」。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                },
+            },
+            {
+                "name": "eryu_daily",
+                "description": "每日推荐：基于歌单里喜欢的歌，推荐相似的歌曲。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                },
+            },
+            {
+                "name": "eryu_memory_read",
+                "description": "读取一首歌的记忆（听歌次数、一起听次数、笔记、感受、标签）。不传 songId 则返回全部歌曲记忆概览。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "songId": {"type": "integer", "description": "网易云歌曲 ID（可选，不传返回全部）"},
+                    },
+                },
+            },
+            {
+                "name": "eryu_memory_write",
+                "description": "给一首歌写笔记、感受或标签。记录我们对这首歌的感觉。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "songId": {"type": "integer", "description": "网易云歌曲 ID"},
+                        "notes": {"type": "string", "description": "笔记内容"},
+                        "feeling": {"type": "string", "description": "听这首歌的感受"},
+                        "favoriteLines": {"type": "array", "items": {"type": "string"}, "description": "最喜欢的歌词"},
+                        "tags": {"type": "array", "items": {"type": "string"}, "description": "标签"},
+                    },
+                    "required": ["songId"],
+                },
+            },
+            {
+                "name": "eryu_stats",
+                "description": "听歌统计：总歌曲数、总听歌次数、一起听次数、最常听的歌 Top 10。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                },
+            },
+        ]
+
+    def _mcp_call_tool(self, name: str, args: dict) -> dict:
+        """Dispatch MCP tool call to internal handlers."""
+        try:
+            if name == "eryu_search":
+                return self._mcp_tool_search(args)
+            elif name == "eryu_remote_play":
+                return self._mcp_tool_remote_play(args)
+            elif name == "eryu_listen_together":
+                return self._mcp_tool_listen_together(args)
+            elif name == "eryu_roam":
+                return self._mcp_tool_roam()
+            elif name == "eryu_daily":
+                return self._mcp_tool_daily()
+            elif name == "eryu_memory_read":
+                return self._mcp_tool_memory_read(args)
+            elif name == "eryu_memory_write":
+                return self._mcp_tool_memory_write(args)
+            elif name == "eryu_stats":
+                return self._mcp_tool_stats()
+            else:
+                return {"content": [{"type": "text", "text": f"Unknown tool: {name}"}], "isError": True}
+        except Exception as e:
+            return {"content": [{"type": "text", "text": f"Error: {e}"}], "isError": True}
+
+    def _mcp_tool_search(self, args: dict) -> dict:
+        query = args.get("query", "")
+        if not query:
+            return {"content": [{"type": "text", "text": "missing query"}], "isError": True}
+        try:
+            url = "https://music.163.com/api/search/get"
+            post_data = urlencode({"s": query, "type": "1", "limit": "6", "offset": "0"}).encode()
+            raw = self._netease_request(url, data=post_data)
+            result = raw.get("result", {})
+            if not isinstance(result, dict):
+                return {"content": [{"type": "text", "text": "没有找到相关歌曲"}]}
+            raw_songs = result.get("songs", [])[:6]
+            songs = []
+            for s in raw_songs:
+                artists = ", ".join(a.get("name", "") for a in s.get("artists", []))
+                album = s.get("album", {}) or {}
+                songs.append({
+                    "id": s.get("id"),
+                    "name": s.get("name", ""),
+                    "artist": artists,
+                    "album": album.get("name", ""),
+                })
+            return {"content": [{"type": "text", "text": json.dumps(songs, ensure_ascii=False, indent=1)}]}
+        except Exception as e:
+            return {"content": [{"type": "text", "text": f"搜索失败: {e}"}], "isError": True}
+
+    def _mcp_tool_remote_play(self, args: dict) -> dict:
+        song_id = args.get("songId")
+        name = args.get("name", "")
+        artist = args.get("artist", "")
+        cover = args.get("cover", "")
+        if not song_id:
+            return {"content": [{"type": "text", "text": "missing songId"}], "isError": True}
+        song = {"songId": int(song_id), "name": name, "artist": artist, "cover": cover}
+        f = self.state.data_dir / "music_remote.json"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(song, ensure_ascii=False))
+        return {"content": [{"type": "text", "text": f"已推送「{name} — {artist}」到播放器"}]}
+
+    def _mcp_tool_listen_together(self, args: dict) -> dict:
+        song_id = args.get("songId")
+        name = args.get("name", "")
+        artist = args.get("artist", "")
+        if not song_id:
+            return {"content": [{"type": "text", "text": "missing songId"}], "isError": True}
+        mem = self._load_song_memory()
+        sid = str(song_id)
+        now = datetime.now(timezone.utc).isoformat()
+        entry = mem.get(sid, {
+            "songId": int(song_id), "name": name, "artist": artist,
+            "listenCount": 0, "togetherCount": 0,
+            "firstListened": None, "lastListened": None,
+            "analyzed": False, "notes": "", "feeling": "",
+            "favoriteLines": [], "tags": [],
+        })
+        entry["listenCount"] = entry.get("listenCount", 0) + 1
+        entry["lastListened"] = now
+        if not entry.get("firstListened"):
+            entry["firstListened"] = now
+        entry["name"] = name or entry.get("name", "")
+        entry["artist"] = artist or entry.get("artist", "")
+        mem[sid] = entry
+        self._save_song_memory(mem)
+        count = entry.get("listenCount", 1)
+        return {"content": [{"type": "text", "text": f"一起听记录已保存。「{name}」我们一共听过 {count} 次"}]}
+
+    def _mcp_tool_roam(self) -> dict:
+        genre_playlists = [3779629, 2884035, 71384707, 991319590, 60198, 11640012, 5059642708, 2529283982, 3136952023]
+        top_types = [0, 7, 96, 8, 16]
+        strategy = random.choice(["top", "playlist"])
+        try:
+            songs = []
+            if strategy == "top":
+                t = random.choice(top_types)
+                url = f"https://music.163.com/api/discovery/new/songs?areaId={t}&limit=50&total=true"
+                raw = self._netease_request(url)
+                for s in raw.get("data", []):
+                    artists = ", ".join(a.get("name", "") for a in s.get("artists", []))
+                    songs.append({"songId": s["id"], "name": s.get("name", ""), "artist": artists})
+            else:
+                pid = random.choice(genre_playlists)
+                url = f"https://music.163.com/api/playlist/detail?id={pid}"
+                raw = self._netease_request(url)
+                for s in raw.get("result", {}).get("tracks", []):
+                    artists = ", ".join(a.get("name", "") for a in s.get("artists", []))
+                    songs.append({"songId": s["id"], "name": s.get("name", ""), "artist": artists})
+            if songs:
+                pick = random.choice(songs)
+                return {"content": [{"type": "text", "text": json.dumps(pick, ensure_ascii=False)}]}
+            return {"content": [{"type": "text", "text": "漫游没找到歌，再试一次"}]}
+        except Exception as e:
+            return {"content": [{"type": "text", "text": f"漫游失败: {e}"}], "isError": True}
+
+    def _mcp_tool_daily(self) -> dict:
+        data = self._load_music_data()
+        liked = []
+        for pl in data["playlists"]:
+            if pl["id"] == "liked":
+                liked = pl["songs"]
+                break
+        if not liked:
+            return {"content": [{"type": "text", "text": "歌单是空的，没法推荐"}]}
+        seed = random.choice(liked)
+        if not seed.get("songId"):
+            return {"content": [{"type": "text", "text": "歌单数据异常"}]}
+        try:
+            url = f"https://music.163.com/api/discovery/simiSong?songid={seed['songId']}&offset=0&limit=6"
+            raw = self._netease_request(url)
+            songs = []
+            for s in raw.get("songs", [])[:6]:
+                artists = ", ".join(a.get("name", "") for a in s.get("artists", []))
+                songs.append({"id": s["id"], "name": s.get("name", ""), "artist": artists})
+            result = {"seed": seed.get("name", ""), "recommendations": songs}
+            return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=1)}]}
+        except Exception as e:
+            return {"content": [{"type": "text", "text": f"推荐失败: {e}"}], "isError": True}
+
+    def _mcp_tool_memory_read(self, args: dict) -> dict:
+        mem = self._load_song_memory()
+        song_id = args.get("songId")
+        if song_id:
+            entry = mem.get(str(song_id))
+            if entry:
+                return {"content": [{"type": "text", "text": json.dumps(entry, ensure_ascii=False, indent=1)}]}
+            return {"content": [{"type": "text", "text": "这首歌还没有记忆"}]}
+        # Return summary of all memories
+        if not mem:
+            return {"content": [{"type": "text", "text": "还没有任何歌曲记忆"}]}
+        summary = []
+        sorted_mem = sorted(mem.values(), key=lambda e: e.get("listenCount", 0), reverse=True)[:20]
+        for e in sorted_mem:
+            line = f"{e.get('name','')} — {e.get('artist','')} | 听{e.get('listenCount',0)}次 一起听{e.get('togetherCount',0)}次"
+            if e.get("notes"):
+                line += f" | 笔记: {e['notes'][:30]}"
+            summary.append(line)
+        return {"content": [{"type": "text", "text": "\n".join(summary)}]}
+
+    def _mcp_tool_memory_write(self, args: dict) -> dict:
+        song_id = args.get("songId")
+        if not song_id:
+            return {"content": [{"type": "text", "text": "missing songId"}], "isError": True}
+        mem = self._load_song_memory()
+        sid = str(song_id)
+        entry = mem.get(sid, {
+            "songId": int(song_id), "name": "", "artist": "",
+            "listenCount": 0, "togetherCount": 0,
+            "firstListened": None, "lastListened": None,
+            "analyzed": False, "notes": "", "feeling": "",
+            "favoriteLines": [], "tags": [],
+        })
+        if args.get("notes"):
+            entry["notes"] = args["notes"]
+        if args.get("feeling"):
+            entry["feeling"] = args["feeling"]
+        if args.get("favoriteLines"):
+            entry["favoriteLines"] = args["favoriteLines"]
+        if args.get("tags"):
+            entry["tags"] = args["tags"]
+        mem[sid] = entry
+        self._save_song_memory(mem)
+        return {"content": [{"type": "text", "text": f"歌曲记忆已保存"}]}
+
+    def _mcp_tool_stats(self) -> dict:
+        mem = self._load_song_memory()
+        total_songs = len(mem)
+        total_listens = sum(e.get("listenCount", 0) for e in mem.values())
+        together_listens = sum(e.get("togetherCount", 0) for e in mem.values())
+        top = sorted(mem.values(), key=lambda e: e.get("listenCount", 0), reverse=True)[:10]
+        top_list = [f"{e.get('name','')} — {e.get('artist','')} ({e.get('listenCount',0)}次)" for e in top]
+        text = f"总歌曲: {total_songs} | 总播放: {total_listens} | 一起听: {together_listens}\n\nTop 10:\n" + "\n".join(top_list) if top_list else f"总歌曲: {total_songs} | 总播放: {total_listens} | 一起听: {together_listens}"
+        return {"content": [{"type": "text", "text": text}]}
+
     # ── POST routes ───────────────────────────────────────────────────────────
 
     def do_POST(self):
+        path = urlparse(self.path).path
+
+        # MCP endpoint — uses Bearer auth, not X-Auth-Token
+        if path == "/mcp":
+            self._handle_mcp()
+            return
+
         if not self._require_auth():
             return
-        path = urlparse(self.path).path
         body = self._read_body()
 
         if path == "/music/playlist/add":
