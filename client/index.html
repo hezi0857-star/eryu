@@ -1549,6 +1549,13 @@ function renderLyricsView() {
   document.getElementById('ly-play').addEventListener('click', togglePlay);
   document.getElementById('ly-prev').addEventListener('click', playPrev);
   document.getElementById('ly-next').addEventListener('click', playNext);
+  document.getElementById('ly-mode').addEventListener('click', () => {
+    const mode = cyclePlayMode();
+    const btn = document.getElementById('ly-mode');
+    if (btn) btn.innerHTML = playModeIcon(mode);
+    showToast(mode === 'sequential' ? 'Sequential' : mode === 'shuffle' ? 'Shuffle' : 'Repeat One');
+  });
+  document.getElementById('ly-queue-btn').addEventListener('click', openQueue);
 
   const memBtn = document.getElementById('ly-mem-btn');
   if (memBtn) memBtn.addEventListener('click', () => openMemory(s.songId));
