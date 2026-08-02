@@ -851,9 +851,14 @@ function renderApp() {
     }
   });
 
-  // NP bar tap -> open lyrics
+  // NP bar event delegation (bound once, survives re-renders)
   document.getElementById('np-bar').addEventListener('click', e => {
-    if (e.target.closest('.np-btn') || e.target.closest('.np-next-btn')) return;
+    const queueBtn = e.target.closest('#np-queue-btn');
+    const playBtn = e.target.closest('#np-play-btn');
+    const nextBtn = e.target.closest('#np-next-btn');
+    if (queueBtn) { e.stopPropagation(); openQueue(); return; }
+    if (playBtn) { e.stopPropagation(); togglePlay(); return; }
+    if (nextBtn) { e.stopPropagation(); playNext(); return; }
     openLyrics();
   });
 
