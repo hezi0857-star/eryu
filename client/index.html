@@ -901,10 +901,10 @@ function startEditField(field) {
   const okBtn = document.getElementById('edit-ok');
   input.focus();
 
-  const save = () => {
+  const save = async () => {
     const val = input.value;
-    if (isName) { homeProfile.name = val; updateProfile({ name: val }); }
-    else { homeProfile.signature = val; updateProfile({ signature: val }); }
+    if (isName) { homeProfile.name = val; await updateProfile({ name: val }); }
+    else { homeProfile.signature = val; await updateProfile({ signature: val }); }
     renderTab();
   };
   okBtn.addEventListener('click', save);
