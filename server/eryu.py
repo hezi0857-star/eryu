@@ -1214,7 +1214,7 @@ class EryuHandler(BaseHTTPRequestHandler):
                 "name": entry["name"],
                 "artist": entry["artist"],
                 "cover": cover,
-                "addedBy": body.get("by", "user"),
+                "addedBy": body.get("by", "unknown"),
             }
             data = self._load_music_data()
             # Add to a "Liked by User" playlist (auto-create if missing)
