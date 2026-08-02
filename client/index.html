@@ -911,8 +911,8 @@ function startEditField(field) {
   input.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
 }
 
-function updateProfile(patch) {
-  apiPost('/music/profile', patch).catch(() => {});
+async function updateProfile(patch) {
+  return apiPost('/music/profile', patch).catch(() => {});
 }
 
 function pickImage(maxSize, cb) {
