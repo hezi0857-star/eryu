@@ -1346,11 +1346,11 @@ function renderSearchResults() {
       likeSong(searchResults[i]);
     });
   });
-  area.querySelectorAll('[data-queue]').forEach(btn => {
+  area.querySelectorAll('[data-addpl]').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      const i = parseInt(btn.dataset.queue);
-      addToQueue(searchResults[i]);
+      const i = parseInt(btn.dataset.addpl);
+      showPlaylistPicker(searchResults[i]);
     });
   });
 }
