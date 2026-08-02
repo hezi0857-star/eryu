@@ -1426,7 +1426,7 @@ function renderSearchResults() {
 
 async function likeSong(s) {
   if (!s?.songId || likedIds.has(s.songId)) return;
-  await apiPost('/music/playlist/add', { song: s, by: 'user' });
+  await apiPost('/music/playlist/add', { song: s, by: 'Una' });
   likedIds.add(s.songId);
   showToast('Liked');
   // Re-render discover to update heart icons
