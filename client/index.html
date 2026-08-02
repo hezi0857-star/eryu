@@ -1298,12 +1298,6 @@ function buildDiscoverHTML() {
               <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
             </svg>
           </button>
-          <button class="queue-btn" data-queue-daily="${i}" title="add to queue">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/></svg>
-          </button>
-          <button class="queue-btn" data-addpl-daily="${i}" title="add to playlist">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
-          </button>
         </div>`;
     });
     html += '</div></div>';
@@ -1346,6 +1340,20 @@ function bindDiscoverEvents(container) {
       e.stopPropagation();
       const i = parseInt(btn.dataset.likeDaily);
       likeSong(dailySongs[i]);
+    });
+  });
+  container.querySelectorAll('[data-queue-daily]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const i = parseInt(btn.dataset.queueDaily);
+      addToQueue(dailySongs[i]);
+    });
+  });
+  container.querySelectorAll('[data-addpl-daily]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const i = parseInt(btn.dataset.addplDaily);
+      showPlaylistPicker(dailySongs[i]);
     });
   });
 }
