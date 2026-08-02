@@ -1800,6 +1800,68 @@ function startRemotePoll() {
   }, 5000);
 }
 
+// ── Add-to-Playlist Picker ──
+
+let pickerSong = null;
+
+function showPlaylistPicker(song) {
+  pickerSong = song;
+  const overlay = document.createElement('div');
+  overlay.className = 'pl-picker-overlay';
+  overlay.id = 'pl-picker-overlay';
+  overlay.innerHTML = `<div class="pl-picker">
+    <div class="pl-picker-title">Add to playlist</div>
+    <div id="pl-picker-list"><div class="spinner"></div></div>
+    <button class="pl-picker-cancel" id="pl-picker-cancel">Cancel</button>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) closePlaylistPicker(); });
+  document.getElementById('pl-picker-cancel').addEventListener('click', closePlaylistPicker);
+  loadPickerPlaylists();
+}
+
+function closePlaylistPicker() {
+  const el = document.getElementById('pl-picker-overlay');
+  if (el) el.remove();
+  pickerSong = null;
+}
+
+async function loadPickerPlaylists() {
+  const listEl = document.getElementById('pl-picker-list');
+  if (!listEl) return;
+  const d = await api('/music/playlists').catch(() => ({}));
+  const pls = d.ok ? (d.playlists || []) : [];
+  if (pls.length === 0) {
+    listEl.innerHTML = '<div style="padding:20px;text-align:center;opacity:0.4;font-size:13px;">no playlists yet</div>';
+    return;
+  }
+  let html = '';
+  pls.forEach(pl => {
+    html += `<div class="pl-picker-item" data-plid="${esc(pl.id)}">
+      <div>
+        <div class="pl-picker-item-name">${esc(pl.name)}</div>
+        <div class="pl-picker-item-count">${pl.count || 0} songs</div>
+      </div>
+    </div>`;
+  });
+  listEl.innerHTML = html;
+  listEl.querySelectorAll('.pl-picker-item').forEach(item => {
+    item.addEventListener('click', () => addSongToPlaylist(item.dataset.plid));
+  });
+}
+
+async function addSongToPlaylist(playlistId) {
+  if (!pickerSong) return;
+  const song = pickerSong;
+  await apiPost('/music/playlists/add-song', {
+    playlistId,
+    song: { songId: song.songId || song.id, name: song.name, artist: song.artist, cover: song.cover || '', album: song.album || '' },
+    by: 'Una'
+  });
+  showToast('Added');
+  closePlaylistPicker();
+}
+
 // ── Init ──
 init();
 // Start remote polling after auth
