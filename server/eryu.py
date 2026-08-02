@@ -1235,6 +1235,18 @@ class EryuHandler(BaseHTTPRequestHandler):
                 entry["feeling"] = body["feeling"]
             if body.get("favoriteLines"):
                 entry["favoriteLines"] = body["favoriteLines"]
+        elif action == "entry":
+            text = body.get("text", "").strip()
+            author = body.get("author", "unknown")
+            if text:
+                entries = entry.get("entries", [])
+                entries.append({
+                    "text": text,
+                    "author": author,
+                    "timestamp": now,
+                })
+                entry["entries"] = entries
+                entry["analyzed"] = True
         mem[song_id] = entry
         self._save_song_memory(mem)
         self._send_json(200, {"ok": True, "memory": entry})
