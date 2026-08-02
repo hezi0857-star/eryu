@@ -1930,6 +1930,169 @@ async function addSongToPlaylist(playlistId) {
   closePlaylistPicker();
 }
 
+// ── Queue Panel ──
+
+let queueOpen = false;
+
+function openQueue() {
+  queueOpen = true;
+  let qv = document.getElementById('queue-view');
+  if (!qv) {
+    qv = document.createElement('div');
+    qv.id = 'queue-view';
+    qv.className = 'queue-view';
+    document.getElementById('app').appendChild(qv);
+  }
+  qv.classList.remove('hidden');
+  renderQueue();
+}
+
+function closeQueue() {
+  queueOpen = false;
+  const qv = document.getElementById('queue-view');
+  if (qv) qv.classList.add('hidden');
+}
+
+function renderQueue() {
+  const qv = document.getElementById('queue-view');
+  if (!qv) return;
+
+  let npHtml = '';
+  if (state.song) {
+    npHtml = `<div class="queue-now-playing">
+      <div class="queue-np-label">Now Playing</div>
+      <div class="queue-np-name">${esc(state.song.name)}</div>
+      <div class="queue-np-artist">${esc(state.song.artist)}</div>
+    </div>`;
+  }
+
+  let listHtml = '';
+  if (state.queue.length === 0) {
+    listHtml = '<div class="queue-empty">queue is empty</div>';
+  } else {
+    state.queue.forEach((s, i) => {
+      listHtml += `<div class="queue-item" data-qi="${i}">
+        <div class="queue-item-info">
+          <div class="queue-item-name">${esc(s.name)}</div>
+          <div class="queue-item-artist">${esc(s.artist)}</div>
+        </div>
+        <button class="queue-item-rm" data-qrm="${i}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>`;
+    });
+  }
+
+  qv.innerHTML = `
+    <div class="queue-header">
+      <button class="queue-close" id="queue-close-btn">&times;</button>
+      <span class="queue-title">Up Next (${state.queue.length})</span>
+      ${state.queue.length > 0 ? '<button class="queue-clear" id="queue-clear-btn">Clear</button>' : ''}
+    </div>
+    <div class="queue-body">${npHtml}${listHtml}</div>`;
+
+  document.getElementById('queue-close-btn').addEventListener('click', closeQueue);
+  const clearBtn = document.getElementById('queue-clear-btn');
+  if (clearBtn) clearBtn.addEventListener('click', () => { state.queue = []; renderQueue(); });
+
+  qv.querySelectorAll('.queue-item-info').forEach(el => {
+    el.addEventListener('click', () => {
+      const i = parseInt(el.parentElement.dataset.qi);
+      const s = state.queue[i];
+      if (s) {
+        state.queue.splice(i, 1);
+        playSong(s);
+        renderQueue();
+      }
+    });
+  });
+
+  qv.querySelectorAll('[data-qrm]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = parseInt(btn.dataset.qrm);
+      state.queue.splice(i, 1);
+      renderQueue();
+    });
+  });
+}
+
+// ── Play Modes ──
+
+const PLAY_MODES = ['sequential', 'shuffle', 'repeat-one'];
+let playModeIdx = 0;
+
+function getPlayMode() { return PLAY_MODES[playModeIdx]; }
+function cyclePlayMode() {
+  playModeIdx = (playModeIdx + 1) % PLAY_MODES.length;
+  notify();
+  return getPlayMode();
+}
+
+function playModeIcon(mode) {
+  if (mode === 'shuffle') return '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>';
+  if (mode === 'repeat-one') return '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/><text x="12" y="14" font-size="8" fill="currentColor" stroke="none" text-anchor="middle">1</text></svg>';
+  return '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>';
+}
+
+// Override playNext to respect play mode
+const _origPlayNext = playNext;
+playNext = async function() {
+  const mode = getPlayMode();
+  if (mode === 'repeat-one' && state.song) {
+    audio.currentTime = 0;
+    audio.play().catch(() => {});
+    return;
+  }
+  if (mode === 'shuffle' && state.queue.length > 1) {
+    const idx = Math.floor(Math.random() * state.queue.length);
+    const s = state.queue.splice(idx, 1)[0];
+    if (state.song) state.history.push(state.song);
+    loadAndPlay(s);
+    return;
+  }
+  // sequential: use original
+  if (state.queue.length > 0) {
+    if (state.song) state.history.push(state.song);
+    loadAndPlay(state.queue.shift());
+    return;
+  }
+  if (state.roam && state.song?.songId) {
+    try {
+      const d = await api('/music/roam?id=' + state.song.songId);
+      if (d.ok && d.song) {
+        loadAndPlay({
+          name: d.song.name, artist: d.song.artist,
+          cover: d.song.cover || '', songId: d.song.id || d.song.songId, album: d.song.album
+        });
+        return;
+      }
+    } catch {}
+  }
+};
+
+// ── Remote Play Polling ──
+
+let remoteInterval = null;
+
+function startRemotePolling() {
+  if (remoteInterval) return;
+  remoteInterval = setInterval(async () => {
+    try {
+      const d = await api('/music/remote');
+      if (d.ok && d.song) {
+        showRemoteToast(d.song);
+        playSong(d.song);
+      }
+    } catch {}
+  }, 5000);
+}
+
+function showRemoteToast(song) {
+  const el = document.createElement('div');
+  el.className = 'remote-toast';
+  el.textContent = `C pushed: ${song.name || 'a song'}`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
 // ── Init ──
 init();
 // Start remote polling after auth
