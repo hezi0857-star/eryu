@@ -2056,17 +2056,23 @@ playNext = async function() {
     audio.play().catch(() => {});
     return;
   }
-  if (mode === 'shuffle' && state.queue.length > 1) {
-    const idx = Math.floor(Math.random() * state.queue.length);
-    const s = state.queue.splice(idx, 1)[0];
-    if (state.song) state.history.push(state.song);
-    loadAndPlay(s);
-    return;
+  if (mode === 'shuffle' && state.queueFull.length > 0) {
+    const candidates = state.queueFull.filter(s => !state.song || s.songId !== state.song.songId);
+    if (candidates.length > 0) {
+      const pick = candidates[Math.floor(Math.random() * candidates.length)];
+      if (state.song) state.history.push(state.song);
+      loadAndPlay(pick);
+      return;
+    }
   }
-  // sequential: use original
+  // sequential
   if (state.queue.length > 0) {
     if (state.song) state.history.push(state.song);
     loadAndPlay(state.queue.shift());
+    // if queue empty and sequential, refill for loop
+    if (state.queue.length === 0 && state.queueFull.length > 0) {
+      state.queue = state.queueFull.slice();
+    }
     return;
   }
   if (state.roam && state.song?.songId) {
