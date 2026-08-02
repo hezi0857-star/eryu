@@ -727,8 +727,8 @@ function togglePlay() {
   else audio.pause();
 }
 
-function setQueue(songs) { state.queue = songs.slice(); }
-function addToQueue(song) { state.queue.push(song); showToast('Added to queue'); }
+function setQueue(songs) { state.queue = songs.slice(); state.queueFull = songs.slice(); }
+function addToQueue(song) { state.queue.push(song); state.queueFull.push(song); showToast('Added to queue'); }
 
 async function playNext() {
   if (state.queue.length > 0) {
