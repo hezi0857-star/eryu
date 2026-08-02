@@ -461,6 +461,42 @@ img { display: block; }
 .sm-loading, .sm-empty {
   text-align: center; color: var(--ink); opacity: 0.3; padding: 60px 0; font-size: 13px;
 }
+.sm-entries { padding: 8px 0; display: flex; flex-direction: column; gap: 10px; }
+.sm-entry {
+  padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.6;
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.sm-entry.author-ai {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-left: 3px solid var(--accent);
+}
+.sm-entry.author-user {
+  border-left: 3px solid var(--good);
+}
+.sm-entry-author {
+  font-size: 10px; font-weight: 600; opacity: 0.5; margin-bottom: 4px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.sm-entry-text { color: var(--ink); opacity: 0.85; white-space: pre-wrap; }
+.sm-entry-time { font-size: 10px; opacity: 0.3; margin-top: 4px; }
+.sm-input-area {
+  display: flex; gap: 8px; padding: 12px 20px;
+  border-top: 1px solid var(--line); flex-shrink: 0;
+  padding-bottom: calc(var(--safe-bottom) + 12px);
+}
+.sm-input {
+  flex: 1; border: none; background: color-mix(in srgb, var(--ink) 8%, transparent);
+  border-radius: 10px; padding: 10px 14px; font-size: 13px; color: var(--ink);
+  outline: none; resize: none; min-height: 38px; max-height: 100px;
+  font-family: var(--font-ui);
+}
+.sm-input::placeholder { color: var(--ink); opacity: 0.3; }
+.sm-input:focus { background: color-mix(in srgb, var(--ink) 12%, transparent); }
+.sm-send {
+  background: var(--accent); border: none; color: #fff; border-radius: 10px;
+  padding: 8px 16px; font-size: 12px; font-weight: 600; flex-shrink: 0;
+  align-self: flex-end;
+}
 
 /* ── Toast ── */
 .toast {
