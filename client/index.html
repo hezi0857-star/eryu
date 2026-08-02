@@ -499,6 +499,36 @@ img { display: block; }
   align-self: flex-end;
 }
 
+/* ── Add-to-Playlist Picker ── */
+.pl-picker-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,0.5); display: flex;
+  align-items: flex-end; justify-content: center;
+}
+.pl-picker {
+  width: 100%; max-width: 400px; max-height: 60vh;
+  background: var(--surface); border-radius: 16px 16px 0 0;
+  padding: 16px 0 calc(var(--safe-bottom) + 16px);
+  overflow-y: auto;
+}
+.pl-picker-title {
+  font-size: 14px; font-weight: 600; color: var(--ink);
+  padding: 0 20px 12px; border-bottom: 1px solid var(--line);
+}
+.pl-picker-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 20px; cursor: pointer; transition: background 0.12s;
+}
+.pl-picker-item:active { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.pl-picker-item-name { font-size: 14px; color: var(--ink); }
+.pl-picker-item-count { font-size: 11px; color: var(--ink); opacity: 0.4; }
+.pl-picker-cancel {
+  display: block; width: calc(100% - 40px); margin: 12px auto 0;
+  padding: 10px; border-radius: 10px; border: none;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--ink); font-size: 13px; cursor: pointer;
+}
+
 /* ── Toast ── */
 .toast {
   position: fixed; top: 56px; left: 50%; transform: translateX(-50%);
