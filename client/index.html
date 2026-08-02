@@ -1349,6 +1349,13 @@ function renderSearchResults() {
       likeSong(searchResults[i]);
     });
   });
+  area.querySelectorAll('[data-queue]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const i = parseInt(btn.dataset.queue);
+      addToQueue(searchResults[i]);
+    });
+  });
   area.querySelectorAll('[data-addpl]').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
