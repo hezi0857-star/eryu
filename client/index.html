@@ -2082,30 +2082,7 @@ playNext = async function() {
   }
 };
 
-// ── Remote Play Polling ──
-
-let remoteInterval = null;
-
-function startRemotePolling() {
-  if (remoteInterval) return;
-  remoteInterval = setInterval(async () => {
-    try {
-      const d = await api('/music/remote');
-      if (d.ok && d.song) {
-        showRemoteToast(d.song);
-        playSong(d.song);
-      }
-    } catch {}
-  }, 5000);
-}
-
-function showRemoteToast(song) {
-  const el = document.createElement('div');
-  el.className = 'remote-toast';
-  el.textContent = `C pushed: ${song.name || 'a song'}`;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 3000);
-}
+// ── Remote Play (disabled - handled by external frontend) ──
 
 // ── Init ──
 init();
