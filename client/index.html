@@ -1604,8 +1604,11 @@ function renderLyricsProgress() {
 // ── Song Memory Panel ──
 // ══════════════════════════════════════════
 
+let currentMemorySongId = null;
+
 function openMemory(songId) {
   memoryOpen = true;
+  currentMemorySongId = songId;
   const mv = document.getElementById('memory-view');
   if (!mv) return;
   mv.classList.remove('hidden');
@@ -1616,6 +1619,7 @@ function openMemory(songId) {
 
 function closeMemory() {
   memoryOpen = false;
+  currentMemorySongId = null;
   const mv = document.getElementById('memory-view');
   if (mv) mv.classList.add('hidden');
 }
@@ -1626,10 +1630,6 @@ async function loadMemory(songId) {
   try {
     const d = await api('/music/memory?id=' + songId);
     const mem = d.memory;
-    if (!mem || !mem.analyzed) {
-      mv.querySelector('.sm-body').innerHTML = '<div class="sm-empty">this song hasn\'t been analyzed yet</div>';
-      return;
-    }
     renderMemory(mv, mem, songId);
   } catch {
     mv.querySelector('.sm-body').innerHTML = '<div class="sm-empty">failed to load</div>';
@@ -1644,23 +1644,49 @@ function renderMemory(mv, mem, songId) {
   };
 
   let body = '';
-  if (mem.feeling) body += `<div class="sm-feeling">${esc(mem.feeling)}</div>`;
-  if (mem.notes) body += `<div class="sm-notes">${esc(mem.notes)}</div>`;
-  if (mem.favoriteLines && mem.favoriteLines.length > 0) {
+
+  // Legacy feeling/notes
+  if (mem && mem.feeling) body += `<div class="sm-feeling">${esc(mem.feeling)}</div>`;
+  if (mem && mem.notes) body += `<div class="sm-notes">${esc(mem.notes)}</div>`;
+
+  // Entries (multi-author)
+  const entries = (mem && mem.entries) || [];
+  if (entries.length > 0) {
+    body += '<div class="sm-entries">';
+    entries.forEach(e => {
+      const isAi = e.author === 'C' || e.author === 'ai';
+      body += `<div class="sm-entry ${isAi ? 'author-ai' : 'author-user'}">
+        <div class="sm-entry-author">${esc(e.author || 'unknown')}</div>
+        <div class="sm-entry-text">${esc(e.text)}</div>
+        <div class="sm-entry-time">${fmtDate(e.timestamp)}</div>
+      </div>`;
+    });
+    body += '</div>';
+  }
+
+  if (mem && mem.favoriteLines && mem.favoriteLines.length > 0) {
     body += '<div class="sm-fav-lines">';
     mem.favoriteLines.forEach(l => { body += `<div class="sm-fav-line">${esc(l)}</div>`; });
     body += '</div>';
   }
-  body += '<div class="sm-meta">';
-  if (mem.listenCount > 0) body += `<span>${mem.listenCount}x played</span>`;
-  if (mem.togetherCount > 0) body += `<span>${mem.togetherCount}x together</span>`;
-  if (mem.bpm) body += `<span>${mem.bpm} BPM</span>`;
-  if (mem.firstListened) body += `<span>first ${fmtDate(mem.firstListened)}</span>`;
-  body += '</div>';
-  if (mem.tags && mem.tags.length > 0) {
-    body += '<div class="sm-tags">';
-    mem.tags.forEach(t => { body += `<span class="sm-tag">${esc(t)}</span>`; });
+
+  // Meta
+  if (mem) {
+    body += '<div class="sm-meta">';
+    if (mem.listenCount > 0) body += `<span>${mem.listenCount}x played</span>`;
+    if (mem.togetherCount > 0) body += `<span>${mem.togetherCount}x together</span>`;
+    if (mem.bpm) body += `<span>${mem.bpm} BPM</span>`;
+    if (mem.firstListened) body += `<span>first ${fmtDate(mem.firstListened)}</span>`;
     body += '</div>';
+    if (mem.tags && mem.tags.length > 0) {
+      body += '<div class="sm-tags">';
+      mem.tags.forEach(t => { body += `<span class="sm-tag">${esc(t)}</span>`; });
+      body += '</div>';
+    }
+  }
+
+  if (!body && !entries.length) {
+    body = '<div class="sm-empty">no notes yet — write the first one below</div>';
   }
 
   mv.innerHTML = `
@@ -1671,10 +1697,43 @@ function renderMemory(mv, mem, songId) {
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
       </button>
     </div>
-    <div class="sm-body">${body}</div>`;
+    <div class="sm-body">${body}</div>
+    <div class="sm-input-area">
+      <textarea class="sm-input" id="sm-note-input" placeholder="write your thoughts..." rows="1"></textarea>
+      <button class="sm-send" id="sm-note-send">Send</button>
+    </div>`;
 
   document.getElementById('sm-close-btn').addEventListener('click', closeMemory);
   document.getElementById('sm-refresh-btn').addEventListener('click', () => loadMemory(songId));
+
+  const noteInput = document.getElementById('sm-note-input');
+  const sendBtn = document.getElementById('sm-note-send');
+
+  // Auto-resize textarea
+  noteInput.addEventListener('input', () => {
+    noteInput.style.height = 'auto';
+    noteInput.style.height = Math.min(noteInput.scrollHeight, 100) + 'px';
+  });
+
+  sendBtn.addEventListener('click', () => submitNote(songId));
+  noteInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitNote(songId); }
+  });
+}
+
+async function submitNote(songId) {
+  const input = document.getElementById('sm-note-input');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  input.style.height = 'auto';
+  try {
+    await apiPost('/music/memory', { songId: parseInt(songId), action: 'entry', text, author: 'Una' });
+    loadMemory(songId);
+  } catch {
+    showToast('failed to save');
+  }
 }
 
 // ══════════════════════════════════════════
