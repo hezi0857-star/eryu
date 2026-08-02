@@ -53,9 +53,10 @@ img { display: block; }
   background-size: cover; background-position: center;
   opacity: 0.45; pointer-events: none; z-index: 0;
 }
-#app > *:not(.app-bg):not(.lyrics-view):not(.memory-view) { position: relative; z-index: 1; }
+#app > *:not(.app-bg):not(.lyrics-view):not(.memory-view):not(.queue-view) { position: relative; z-index: 1; }
 .lyrics-view { position: fixed !important; }
 .memory-view { position: fixed !important; }
+.queue-view { position: fixed !important; }
 
 /* ── Auth Overlay ── */
 .auth-overlay {
