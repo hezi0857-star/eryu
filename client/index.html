@@ -712,15 +712,22 @@ async function loadAndPlay(song) {
   if (!song || !song.songId) return;
   state.song = song;
   notifySong();
-  try {
-    const d = await api('/music/url?id=' + song.songId);
-    if (d.url) {
-      audio.src = d.url;
-      audio.play().catch(() => {});
+  let retries = 2;
+  while (retries > 0) {
+    try {
+      const d = await api('/music/url?id=' + song.songId);
+      if (d.url) {
+        audio.src = d.url;
+        await audio.play();
+        return;
+      }
+    } catch (e) {
+      console.warn('loadAndPlay attempt failed', e);
     }
-  } catch (e) {
-    console.error('loadAndPlay error', e);
+    retries--;
+    if (retries > 0) await new Promise(r => setTimeout(r, 1500));
   }
+  showToast('failed to load');
 }
 
 function togglePlay() {
