@@ -758,6 +758,7 @@ class EryuHandler(BaseHTTPRequestHandler):
         return {"content": [{"type": "text", "text": f"歌曲记忆已保存"}]}
 
     def _mcp_tool_stats(self) -> dict:
+        mem = self._load_song_memory()
         total_songs = len(mem)
         total_listens = sum(e.get("listenCount", 0) for e in mem.values())
         together_listens = sum(e.get("togetherCount", 0) for e in mem.values())
@@ -765,6 +766,79 @@ class EryuHandler(BaseHTTPRequestHandler):
         top_list = [f"{e.get('name','')} — {e.get('artist','')} ({e.get('listenCount',0)}次)" for e in top]
         text = f"总歌曲: {total_songs} | 总播放: {total_listens} | 一起听: {together_listens}\n\nTop 10:\n" + "\n".join(top_list) if top_list else f"总歌曲: {total_songs} | 总播放: {total_listens} | 一起听: {together_listens}"
         return {"content": [{"type": "text", "text": text}]}
+
+    def _mcp_tool_analyze(self, args: dict) -> dict:
+        song_id = args.get("songId")
+        song_name = args.get("name", "")
+        song_artist = args.get("artist", "")
+        if not song_id:
+            return {"content": [{"type": "text", "text": "missing songId"}], "isError": True}
+
+        cache_dir = self.state.data_dir / "music_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        result_file = cache_dir / f"{song_id}_preanalysis.json"
+        marker_file = cache_dir / f"{song_id}.analyzing"
+        err_file = cache_dir / f"{song_id}_analyze_error.txt"
+
+        def _format(result: dict) -> str:
+            bpm = result.get("bpm", "?")
+            key = result.get("key", "?")
+            dur = result.get("duration", 0)
+            mins = int(dur // 60)
+            secs = int(dur % 60)
+            lines = [
+                f"{result.get('name', '')} — {result.get('artist', '')}",
+                f"BPM: {bpm}  |  调性: {key}  |  时长: {mins}:{secs:02d}",
+            ]
+            segs = result.get("segments", [])
+            if segs:
+                lines.append("能量曲线:")
+                for i, s in enumerate(segs):
+                    avg = s.get("avgEnergy", 0)
+                    bar = "█" * max(1, int(avg * 40))
+                    lines.append(f"  {int(s.get('start',0)):>3d}-{int(s.get('end',0)):>3d}s  {bar} {avg:.3f}")
+            return "\n".join(lines)
+
+        # Already analyzed
+        if result_file.exists():
+            try:
+                return {"content": [{"type": "text", "text": _format(json.loads(result_file.read_text()))}]}
+            except Exception:
+                result_file.unlink(missing_ok=True)
+
+        # Ensure audio cached
+        audio_file = cache_dir / f"{song_id}.mp3"
+        if not audio_file.exists():
+            if not self._fetch_music_url(song_id):
+                return {"content": [{"type": "text", "text": "无法获取音频，可能需要VIP或歌曲不可用"}], "isError": True}
+
+        # Trigger analysis if not already running
+        if not marker_file.exists():
+            err_file.unlink(missing_ok=True)
+            marker_file.write_text(json.dumps({
+                "songId": song_id, "name": song_name, "started": time.time()
+            }))
+            script = str(HERE / "analyze_song.py")
+            subprocess.Popen(
+                ["python3", script, str(song_id), song_name, song_artist, str(cache_dir)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+
+        # Poll for result (up to ~90s)
+        deadline = time.time() + 90
+        while time.time() < deadline:
+            if result_file.exists():
+                try:
+                    return {"content": [{"type": "text", "text": _format(json.loads(result_file.read_text()))}]}
+                except Exception:
+                    break
+            if err_file.exists():
+                err = err_file.read_text()
+                return {"content": [{"type": "text", "text": f"分析出错: {err}"}], "isError": True}
+            time.sleep(2)
+
+        return {"content": [{"type": "text", "text": "分析仍在进行中，请稍后用 eryu_analyze 再查一次"}]}
 
     # ── POST routes ───────────────────────────────────────────────────────────
 
