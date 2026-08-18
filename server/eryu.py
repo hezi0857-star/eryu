@@ -554,6 +554,19 @@ class EryuHandler(BaseHTTPRequestHandler):
                     "properties": {},
                 },
             },
+            {
+                "name": "eryu_analyze",
+                "description": "分析一首歌的音频特征：BPM（节奏快慢）、调性（key）、时长、能量曲线（分段动态）。用于「这首歌多少BPM」「分析一下这首歌」等场景。首次分析需下载并处理音频，可能耗时约30-60秒。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "songId": {"type": "integer", "description": "网易云歌曲 ID"},
+                        "name": {"type": "string", "description": "歌曲名（可选）"},
+                        "artist": {"type": "string", "description": "歌手名（可选）"},
+                    },
+                    "required": ["songId"],
+                },
+            },
         ]
 
     def _mcp_call_tool(self, name: str, args: dict) -> dict:
