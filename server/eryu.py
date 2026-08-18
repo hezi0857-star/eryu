@@ -758,7 +758,6 @@ class EryuHandler(BaseHTTPRequestHandler):
         return {"content": [{"type": "text", "text": f"歌曲记忆已保存"}]}
 
     def _mcp_tool_stats(self) -> dict:
-        mem = self._load_song_memory()
         total_songs = len(mem)
         total_listens = sum(e.get("listenCount", 0) for e in mem.values())
         together_listens = sum(e.get("togetherCount", 0) for e in mem.values())
