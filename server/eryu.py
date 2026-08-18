@@ -588,6 +588,8 @@ class EryuHandler(BaseHTTPRequestHandler):
                 return self._mcp_tool_memory_write(args)
             elif name == "eryu_stats":
                 return self._mcp_tool_stats()
+            elif name == "eryu_analyze":
+                return self._mcp_tool_analyze(args)
             else:
                 return {"content": [{"type": "text", "text": f"Unknown tool: {name}"}], "isError": True}
         except Exception as e:
