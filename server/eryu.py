@@ -60,6 +60,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("eryu")
 
+_DL_LOCKS: dict = {}
+_DL_LOCKS_GUARD = threading.Lock()
+
 
 # ── Secret management ────────────────────────────────────────────────────────
 
@@ -193,16 +196,16 @@ class EryuHandler(BaseHTTPRequestHandler):
     def _netease_cookie(self) -> str:
         # Try environment variable first (for PaaS like Zeabur)
         env_cookie = os.environ.get("NETEASE_MUSIC_U", "")
-        if env_cookie:
+        if env_cookie and not (HERE / "data" / ".netease_cred").exists():
             return f"MUSIC_U={env_cookie}"
-        # Fall back to file
-        cred = HERE / ".netease_cred"
-        try:
-            for line in cred.read_text().splitlines():
-                if line.startswith("MUSIC_U="):
-                    return f"MUSIC_U={line.split('=', 1)[1].strip()}"
-        except OSError:
-            pass
+        # Fall back to file (data dir first; editable at runtime via POST /music/cookie)
+        for cred in (HERE / "data" / ".netease_cred", HERE / ".netease_cred"):
+            try:
+                for line in cred.read_text().splitlines():
+                    if line.startswith("MUSIC_U="):
+                        return f"MUSIC_U={line.split('=', 1)[1].strip()}"
+            except OSError:
+                pass
         return ""
 
     def _netease_request(self, url: str, data: bytes | None = None,
@@ -232,6 +235,35 @@ class EryuHandler(BaseHTTPRequestHandler):
             return d.get("songs", [{}])[0].get("album", {}).get("picUrl", "")
         except Exception:
             return ""
+
+    # ── Netease cookie (runtime-swappable) ──
+
+    def _handle_cookie_status(self):
+        try:
+            raw = self._netease_request("https://music.163.com/api/nuser/account/get")
+            prof = raw.get("profile") or {}
+            acct = raw.get("account") or {}
+            self._send_json(200, {"ok": True, "loggedIn": bool(prof),
+                                  "nickname": prof.get("nickname", ""),
+                                  "vipType": acct.get("vipType", 0)})
+        except Exception as e:
+            self._send_json(200, {"ok": False, "loggedIn": False, "error": str(e)})
+
+    def _handle_cookie_set(self, body: dict):
+        val = str(body.get("music_u", "")).strip()
+        if val.startswith("MUSIC_U="):
+            val = val.split("=", 1)[1]
+        val = val.strip().strip(";").strip()
+        if len(val) < 50 or not re.fullmatch(r"[A-Za-z0-9]+", val):
+            self._send_json(400, {"ok": False, "error": "这不像 MUSIC_U，检查一下有没有复制完整"})
+            return
+        f = self.state.data_dir / ".netease_cred"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_suffix(".tmp")
+        tmp.write_text(f"MUSIC_U={val}\n")
+        tmp.chmod(0o600)
+        tmp.replace(f)
+        self._handle_cookie_status()
 
     # ── Data helpers ──
 
@@ -304,7 +336,7 @@ class EryuHandler(BaseHTTPRequestHandler):
                 "Referer": "https://music.163.com",
                 "Cookie": self._netease_cookie(),
             })
-            tmp = cache_file.with_suffix(".tmp")
+            tmp = cache_file.with_name(f"{cache_file.stem}.{threading.get_ident()}.tmp")
             with urllib.request.urlopen(areq, timeout=120) as aresp:
                 with open(tmp, "wb") as f:
                     while True:
@@ -312,7 +344,10 @@ class EryuHandler(BaseHTTPRequestHandler):
                         if not chunk:
                             break
                         f.write(chunk)
-            tmp.rename(cache_file)
+            if tmp.stat().st_size < 1000:
+                tmp.unlink(missing_ok=True)
+                raise IOError("download too small")
+            tmp.replace(cache_file)
 
         try:
             _dl(audio_url)
@@ -328,6 +363,18 @@ class EryuHandler(BaseHTTPRequestHandler):
         cache_file = cache_dir / f"{song_id}.mp3"
         if cache_file.exists() and cache_file.stat().st_size > 0:
             return True
+        with _DL_LOCKS_GUARD:
+            lock = _DL_LOCKS.setdefault(str(song_id), threading.Lock())
+        with lock:
+            if cache_file.exists() and cache_file.stat().st_size > 0:
+                return True
+            for attempt in range(2):
+                if self._fetch_music_url_once(song_id, cache_file):
+                    return True
+                time.sleep(1.5)
+            return False
+
+    def _fetch_music_url_once(self, song_id, cache_file) -> bool:
         try:
             url = f"https://music.163.com/api/song/enhance/player/url?ids=[{song_id}]&br=128000"
             raw = self._netease_request(url)
@@ -365,6 +412,9 @@ class EryuHandler(BaseHTTPRequestHandler):
         if not self._require_auth():
             return
 
+        if path == "/music/cookie/status":
+            self._handle_cookie_status()
+            return
         if path == "/music/search":
             self._handle_music_search()
         elif path == "/music/url":
@@ -854,7 +904,9 @@ class EryuHandler(BaseHTTPRequestHandler):
             return
         body = self._read_body()
 
-        if path == "/music/playlist/add":
+        if path == "/music/cookie":
+            self._handle_cookie_set(body)
+        elif path == "/music/playlist/add":
             self._handle_music_playlist_add(body)
         elif path == "/music/playlist/remove":
             self._handle_music_playlist_remove(body)
